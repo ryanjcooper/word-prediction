@@ -10,7 +10,7 @@ class Data():
             filepath: path to file
 
         Raises:
-            FileNotFound
+            FileNotFoundError if filepath not found
     '''
     def __init__(self, filepath):
         self.filepath = filepath
@@ -19,27 +19,103 @@ class Data():
 
         self.f = open(self.filepath, 'r', encoding='latin')
 
+        self.word_map = { '':0 } # 0 is null word
+        self.char_map = { '':0 } # 0 is null char
+        self.word_map_index = 1
+        self.char_map_index = 1
+
+    # def build(self)
+
     def parse(self, column=2, min_sen_len=5, num_max=None):
+        sentances = []
+
         for line in self.f.readlines()[:num_max]:
             # convert to array; tab deliminated
             line = line.rstrip().split('\t')
 
             # get tweet from column
-            text = line[column]
-
+            try:
+                text = line[column]
+            except IndexError:
+                continue
             #remove urls
             text = self.__remove_urls(text)
 
-            # resolve hashtags and mentions's
+            # resolve hashtags and mentions
             text = self.__remove_hashtags(text)
             text = self.__remove_mentions(text)
 
             # split text into sentances (not naive)
-            sentences = self.__split_into_sentences(text, min_sen_len)
+            sentances.append(self.__split_into_sentences(text, min_sen_len))
+        sentances = [item for sublist in sentances for item in sublist]
+        return sentances
 
-            # print(text)
-            print(sentences)
-            # print(repr(line))
+    def build_training_data(self, sentances, num_prev_words=2, char_token_len=None):
+        data = []
+
+        if char_token_len == None:
+            char_token_len = self.__get_max_char_token_len(sentances)
+
+        print(char_token_len)
+
+        exit()
+        for s in sentances:
+            split = s.split(' ')
+            for i, word in enumerate(split):
+                # assign id to word based on encounter
+                try:
+                    self.word_map[word]
+                except:
+                    self.word_map.update({ word:self.word_map_index })
+                    self.word_map_index+=1
+
+                prev_words = []
+                # get indices of previous words and iterate through them to process them.
+                for prev_index in [ i - j for j in reversed(range(1, num_prev_words + 1)) ]:
+                    if prev_index < 0:
+                        prev_words.append('')
+                    else:
+                        prev_words.append(split[prev_index])
+
+                data.append([prev_words, self.sequence(word)])
+
+        for d in data:
+            print(d)
+        exit()
+
+        assert(len(self.word_map) == self.word_map_index) # make sure nothing went wrong with indexing words
+        exit()
+
+
+    def sequence(self, word):
+        ''' Return a list of all sequences of a word.
+
+            > Data().sequence('hello')
+            ['h', 'he', 'hel', 'hell', 'hello']
+        '''
+        s = ''
+        l = []
+        for c in word:
+            s += c
+            l.append(s)
+        return l
+
+    def __get_max_char_token_len(self, sentances):
+        m = 0
+        mword = ''
+        msen = ''
+        for sentance in sentances:
+            for word in sentance.split(' '):
+                if len(word) > m:
+                    msen = sentance
+                    m = len(word)
+                    mword = word
+        print(m)
+        print(mword)
+        print(msen)
+        exit()
+
+        return m
 
     def __remove_hashtags(self, text):
         return ' '.join(filter(lambda x:x[0]!='@', text.split()))
@@ -78,7 +154,7 @@ class Data():
         text = text.replace("<prd>",".")
         sentences = text.split("<stop>")
         sentences = sentences[:-1]
-        sentences = [s.strip(r'.|!|?').strip().replace(',','') for s in sentences if len(s.split()) >= min_sen_len]
+        sentences = [re.sub(r'-|/|\\', ' ', s.strip(r'.|!|?').strip().replace(',','')) for s in sentences if len(s.split()) >= min_sen_len]
         return sentences
 
     def __remove_urls(self, text):
@@ -86,4 +162,10 @@ class Data():
         return re.sub(r'\w+:\/{2}[\d\w-]+(\.[\d\w-]+)*(?:(?:\/[^\s/]*))*', '', text)
 
 if __name__ == '__main__':
-    data = Data(r'F:\Datasets\twitter_cikm_2010\training_set_tweets.txt').parse(min_sen_len=2, num_max=10)
+    d = Data(r'F:\Datasets\twitter_cikm_2010\training_set_tweets.txt')
+    sentances = d.parse(min_sen_len=2, num_max=100)
+    # sentances = d.parse(min_sen_len=2, num_max=10)
+    td = d.build_training_data(sentances)
+    # for d in data:
+    #     print(d)
+    # print( Word('hello').sequence )
