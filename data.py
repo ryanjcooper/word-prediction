@@ -24,8 +24,6 @@ class Data():
         self.word_map_index = 1
         self.char_map_index = 1
 
-    # def build(self)
-
     def parse(self, column=2, min_sen_len=5, num_max=None):
         sentances = []
 
@@ -51,14 +49,26 @@ class Data():
         return sentances
 
     def build_training_data(self, sentances, num_prev_words=2, char_token_len=None):
+        '''
+            Take in a list of sentances and return the training data required to train model.
+
+            Arguments:
+                sentances: list of sentances to train on
+
+            Optional Arguments:
+                num_prev_words (default: 2): context lookback distance, uses NULL if no word exists
+                char_token_len (defualt: None): manually define the max character token length
+
+        '''
+
         data = []
+        expected_words = []
 
         if char_token_len == None:
-            char_token_len = self.__get_max_char_token_len(sentances)
+            self.char_token_len = self.__get_max_char_token_len(sentances)
+        else:
+            self.char_token_len = char_token_len
 
-        print(char_token_len)
-
-        exit()
         for s in sentances:
             split = s.split(' ')
             for i, word in enumerate(split):
@@ -73,31 +83,73 @@ class Data():
                 # get indices of previous words and iterate through them to process them.
                 for prev_index in [ i - j for j in reversed(range(1, num_prev_words + 1)) ]:
                     if prev_index < 0:
-                        prev_words.append('')
+                        prev_words.append(self.word_map[''])
                     else:
-                        prev_words.append(split[prev_index])
+                        prev_words.append(self.word_map[split[prev_index]])
 
-                data.append([prev_words, self.sequence(word)])
+                # skip trying to predict words that are too long.
+                if len(word) >= self.char_token_len:
+                    continue
 
-        for d in data:
-            print(d)
-        exit()
+                seqs = self.transform_event([prev_words, self.sequence(word)]) # generate training data sequences from word sequences.
+                data += seqs # add new seqs to data
+                expected_words += [self.word_map[word] for _ in range(len(seqs))] # populate enough words to match the number of sequences populated.
+
+                # data.append([prev_words, self.sequence(word), self.word_map[word]])
 
         assert(len(self.word_map) == self.word_map_index) # make sure nothing went wrong with indexing words
-        exit()
+        assert(len(data) == len(expected_words))
 
+        # implicit data ordering
+        return (data, expected_words)
 
-    def sequence(self, word):
+    def transform_event(self, event):
+        '''
+            Intermediary function used to transform a word event into many training samples.
+
+            Arguments:
+                event: list of [prev_words, self.sequence(word)]
+
+            Returns:
+                List of structure: [[prev_words, seq1], [prev_words, seq2], ...]
+        '''
+        data = []
+        for seq in event[1]:
+            data.append([event[0], seq])
+        return data
+
+    def sequence(self, word, tokenize=True):
         ''' Return a list of all sequences of a word.
 
-            > Data().sequence('hello')
-            ['h', 'he', 'hel', 'hell', 'hello']
+            > Data().sequence('hello', tokenize=False)
+            ['', 'h', 'he', 'hel', 'hell', 'hello']
+
+            > Data().sequence('hello', tokenize=True)
+            [[0, 0, 0, ...], [5, 0, 0, 0], 'he', 'hel', 'hell', 'hello']
         '''
-        s = ''
-        l = []
-        for c in word:
-            s += c
-            l.append(s)
+
+        if tokenize:
+            a = [0 for _ in range(self.char_token_len)]
+            l = [a.copy()]
+            for i, c in enumerate(word):
+                # assign id to character encounter
+                try:
+                    self.char_map[c]
+                except:
+                    self.char_map.update({ c:self.char_map_index })
+                    self.char_map_index+=1
+                try:
+                    a[i] = self.char_map[c]
+                except IndexError: # out of range (likely user defined max char len)
+                    break
+                l.append(a.copy())
+        else:
+            s = ''
+            l = ['']
+            for c in word:
+                s += c
+                l.append(s)
+
         return l
 
     def __get_max_char_token_len(self, sentances):
@@ -110,10 +162,6 @@ class Data():
                     msen = sentance
                     m = len(word)
                     mword = word
-        print(m)
-        print(mword)
-        print(msen)
-        exit()
 
         return m
 
@@ -163,9 +211,8 @@ class Data():
 
 if __name__ == '__main__':
     d = Data(r'F:\Datasets\twitter_cikm_2010\training_set_tweets.txt')
-    sentances = d.parse(min_sen_len=2, num_max=100)
-    # sentances = d.parse(min_sen_len=2, num_max=10)
-    td = d.build_training_data(sentances)
-    # for d in data:
-    #     print(d)
-    # print( Word('hello').sequence )
+    sentances = d.parse(min_sen_len=2, num_max=10000)
+    td = d.build_training_data(sentances, char_token_len=15)
+
+    for i in range(len(td[0])):
+        print(td[0][i], td[1][i])
